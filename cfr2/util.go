@@ -3,6 +3,7 @@ package cfr2
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"log"
 
 	//"errors"
 	"io"
@@ -29,5 +30,23 @@ func GetEnv(s string, d string) string {
 		return v
 	} else {
 		return d
+	}
+}
+
+func FatalError(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func PrintlnError(err error) {
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func PrintlnDebug(s string) {
+	if IsDebug {
+		log.Println(s)
 	}
 }

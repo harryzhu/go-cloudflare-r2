@@ -33,24 +33,34 @@ var (
 )
 
 const (
-	YYYYMMDD = "2006-01-02"
+	IsDebug         bool   = true
+	YYYYMMDD        string = "2006-01-02"
+	MAX_UPLOAD_SIZE int64  = 10 << 10
 )
 
 var (
 	isDebug  bool  = true
 	anyError error = errors.New("[error]")
+
 	s3client *s3.Client
 )
 
 func init() {
-	logFile := time.Now().Format(YYYYMMDD)
-	f, _ := os.OpenFile(filepath.Join(LogsDir, "gin_"+logFile+".log"), os.O_APPEND, 755)
-	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+	StartLogging()
 	//
 	uploadTempDir = filepath.Join(TempDir, "upload")
-	fmt.Println("uploadTempDir:", uploadTempDir)
+	log.Println("uploadTempDir:", uploadTempDir)
+
 	s3client = GetS3Client()
 
+	_, err := s3client.HeadBucket(context.TODO(), &s3.HeadBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+	if err != nil {
+		FatalError(err)
+	} else {
+		PrintlnDebug("found bucket")
+	}
 }
 
 func GetS3Client() *s3.Client {
@@ -66,7 +76,7 @@ func GetS3Client() *s3.Client {
 		config.WithRegion("auto"),
 	)
 	if err != nil {
-		log.Fatal(err)
+		FatalError(err)
 	}
 
 	c := s3.NewFromConfig(cfg)
@@ -74,21 +84,21 @@ func GetS3Client() *s3.Client {
 	return c
 }
 
-func ginOut(c *gin.Context, j JsonResponse, isBreak bool) {
+func ginOut(c *gin.Context, j JsonResponse) {
 	if isDebug {
-		log.Println(j.Jsonify())
+		PrintlnDebug(j.Jsonify())
 	}
 	c.JSON(http.StatusOK, j)
-	if isBreak {
-		c.AbortWithError(200, anyError)
-	}
 }
 
 func StartServer() {
+
 	r := gin.Default()
 	r.LoadHTMLGlob("templates/*")
 
 	smoke := NewJsonResponse()
+	smoke.WithFunction("main")
+	smoke.WithStep(0)
 	d := make(map[string]any, 1)
 	d["status"] = "ok"
 	smoke.WithData(d)
@@ -104,4 +114,13 @@ func StartServer() {
 	api.DELETE("/delete/:bkt/:key", deleteFile)
 
 	r.Run(Listen)
+}
+
+func StartLogging() {
+	logFile := time.Now().Format(YYYYMMDD)
+	f, err := os.OpenFile(filepath.Join(LogsDir, "gin_"+logFile+".log"), os.O_CREATE|os.O_RDWR|os.O_APPEND, os.ModePerm)
+	if err != nil {
+		FatalError(err)
+	}
+	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 }

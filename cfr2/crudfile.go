@@ -2,6 +2,7 @@ package cfr2
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 
 	//"errors"
@@ -18,7 +19,6 @@ import (
 
 	//"encoding/json"
 	//"fmt"
-	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	//"github.com/aws/aws-sdk-go-v2/config"
@@ -36,37 +36,50 @@ func createFile(c *gin.Context) {
 	resp.WithFunction("createFile")
 
 	f, _ := c.FormFile(upload_file_form_name)
-	log.Println(f.Filename)
+	PrintlnDebug(f.Filename)
+
 	dst := filepath.Join(uploadTempDir, f.Filename)
 	fSize := f.Size
-	c.SaveUploadedFile(f, dst)
+	err := c.SaveUploadedFile(f, dst)
+	if err != nil {
+		PrintlnError(err)
+		resp.AutoStep()
+		resp.WithErrorMessage(500, err.Error())
+		ginOut(c, resp)
+		return
+	}
 
 	fMD5, err := MD5File(dst)
 	if err != nil {
 		resp.AutoStep()
 		resp.WithErrorMessage(500, err.Error())
-		ginOut(c, resp, true)
+		ginOut(c, resp)
+		return
 	}
 
 	fKey := fMD5
 
 	if Exists(bucketName, fKey) {
 		resp.AutoStep()
-		ginOut(c, resp, true)
-		log.Println("SKIP(as exists) ...")
+		resp.WithErrorMessage(0, "SKIP save as exist")
+		ginOut(c, resp)
+
+		PrintlnDebug("SKIP save as exist")
+		return
 	} else {
 		// upload
 		fi, err := os.Open(dst)
 		if err != nil {
 			resp.WithErrorMessage(500, err.Error())
 			resp.AutoStep()
-			ginOut(c, resp, true)
+			ginOut(c, resp)
+			return
 		}
 
 		s3uploader := manager.NewUploader(s3client)
 		fBytes, _ := io.ReadAll(fi)
 
-		result, err := s3uploader.Upload(context.TODO(), &s3.PutObjectInput{
+		_, err = s3uploader.Upload(context.TODO(), &s3.PutObjectInput{
 			Bucket:        aws.String(bucketName),
 			Key:           aws.String(fKey),
 			ContentType:   aws.String("image/png"),
@@ -75,42 +88,54 @@ func createFile(c *gin.Context) {
 		})
 
 		if err != nil {
-			log.Println(err)
+			PrintlnError(err)
 		} else {
 			err = os.Remove(dst)
 			if err != nil {
 				resp.AutoStep()
 				resp.WithErrorMessage(500, err.Error())
 			}
-			log.Println("R2 UPLOADED:", result)
+			PrintlnDebug("R2 UPLOADED:")
 		}
 	}
 
-	ginOut(c, resp, true)
+	ginOut(c, resp)
 }
 
 func deleteFile(c *gin.Context) {
+	resp := NewJsonResponse()
+	resp.WithFunction("deleteFile")
+
 	bkt := c.Param("bkt")
 	key := c.Param("key")
 
 	if bkt != "" && key != "" {
-		log.Println(bkt, key)
+		PrintlnDebug(fmt.Sprintf("%s/%s", bkt, key))
 		if Exists(bkt, key) {
-			log.Println("DELETE ...")
-			result, err := s3client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+			PrintlnDebug("DELETE ...")
+			_, err := s3client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 				Bucket: aws.String(bkt),
 				Key:    aws.String(key),
 			})
 			if err != nil {
-				log.Println(err)
+				resp.AutoStep()
+				resp.WithErrorMessage(500, err.Error())
+				PrintlnError(err)
 			} else {
-				log.Println(result)
+				resp.AutoStep()
+				resp.WithErrorMessage(0, "ok")
+				PrintlnDebug(fmt.Sprintf("DELETED: %s/%s", bkt, key))
 			}
 		} else {
-			log.Println("key does not exist:", bkt, "/", key)
+			resp.AutoStep()
+			resp.WithErrorMessage(404, fmt.Sprintf("key does not exist: %s/%s", bkt, key))
+			PrintlnDebug(fmt.Sprintf("Error: key does not exist: %s/%s", bkt, key))
 		}
+	} else {
+		resp.AutoStep()
+		resp.WithErrorMessage(500, "bucket or key cannot be empty")
 	}
-
+	ginOut(c, resp)
 }
 
 func getFormFileHTML(c *gin.Context) {
@@ -125,6 +150,7 @@ func Exists(b string, k string) bool {
 	})
 
 	if err != nil {
+		PrintlnError(err)
 		return false
 	}
 	return true
