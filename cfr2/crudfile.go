@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	//"errors"
 	"io"
@@ -29,6 +30,8 @@ import (
 
 var (
 	upload_file_form_name string = "upload-file-form"
+	upload_path_prefix    string = "upload-path-prefix"
+	upload_user_name      string = "upload-user-name"
 )
 
 func createFile(c *gin.Context) {
@@ -36,10 +39,14 @@ func createFile(c *gin.Context) {
 	resp.WithFunction("createFile")
 
 	f, _ := c.FormFile(upload_file_form_name)
-	PrintlnDebug(f.Filename)
+	path_prefix := c.PostForm(upload_path_prefix)
+	user_name := c.PostForm(upload_user_name)
+
+	PrintlnDebug(user_name + ":" + path_prefix + ":" + f.Filename)
 
 	dst := filepath.Join(uploadTempDir, f.Filename)
 	fSize := f.Size
+	fContentType := "image/png"
 	err := c.SaveUploadedFile(f, dst)
 	if err != nil {
 		PrintlnError(err)
@@ -57,7 +64,7 @@ func createFile(c *gin.Context) {
 		return
 	}
 
-	fKey := fMD5
+	fKey := filepath.Join(path_prefix, user_name, fMD5)
 
 	if Exists(bucketName, fKey) {
 		resp.AutoStep()
@@ -82,7 +89,7 @@ func createFile(c *gin.Context) {
 		_, err = s3uploader.Upload(context.TODO(), &s3.PutObjectInput{
 			Bucket:        aws.String(bucketName),
 			Key:           aws.String(fKey),
-			ContentType:   aws.String("image/png"),
+			ContentType:   aws.String(fContentType),
 			ContentLength: aws.Int64(fSize),
 			Body:          bytes.NewReader(fBytes),
 		})
@@ -95,6 +102,12 @@ func createFile(c *gin.Context) {
 				resp.AutoStep()
 				resp.WithErrorMessage(500, err.Error())
 			}
+			resp.WithErrorMessage(0, "ok")
+			d := make(map[string]string, 3)
+			d["key"] = fKey
+			d["size"] = strconv.FormatInt(fSize, 10)
+			d["content-type"] = fContentType
+			resp.WithData(d)
 			PrintlnDebug("R2 UPLOADED:")
 		}
 	}

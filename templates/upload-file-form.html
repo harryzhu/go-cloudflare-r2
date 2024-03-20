@@ -1,4 +1,6 @@
 <form action="/api/upload" method="post" enctype="multipart/form-data">
 	<input type="file" name="{{.upload_file_form_name}}" />
+	<input type="text" name="upload-path-prefix" value="text/image" />
+	<input type="text" name="upload-user-name" value="u0" />
 	<input type="submit" value="UPLOAD">
 </form>
