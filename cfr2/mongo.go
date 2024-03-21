@@ -36,6 +36,7 @@ func (m *Item) Save(c string) *Item {
 		m,
 	)
 	PrintlnDebug(err)
+
 	PrintlnDebug(result.InsertedID)
 	return m
 }
