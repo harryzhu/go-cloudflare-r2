@@ -1,18 +1,13 @@
 package cfr2
 
 import (
-	"bytes"
 	"fmt"
-	"log"
 	"path/filepath"
-	"strconv"
+	"strings"
 
 	//"errors"
-	"io"
 
 	//"io/ioutil"
-
-	"os"
 
 	"context"
 	//"os"
@@ -25,7 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	//"github.com/aws/aws-sdk-go-v2/config"
 	//"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -35,106 +30,37 @@ var (
 	upload_user_name      string = "upload-user-name"
 )
 
-func createFile(c *gin.Context) {
+func PutFile(c *gin.Context) {
 	resp := NewJsonResponse()
 	resp.WithFunction("createFile")
 
-	f, _ := c.FormFile(upload_file_form_name)
+	fUpload, err := c.FormFile(upload_file_form_name)
+	if err != nil {
+		PrintlnError(err)
+		return
+	}
+
 	path_prefix := c.PostForm(upload_path_prefix)
 	user_name := c.PostForm(upload_user_name)
 
-	PrintlnDebug(user_name + ":" + path_prefix + ":" + f.Filename)
-
-	dst := filepath.Join(uploadTempDir, f.Filename)
-	fSize := f.Size
-	fContentType := "image/png"
-	err := c.SaveUploadedFile(f, dst)
+	fDst := filepath.Join(uploadTempDir, fUpload.Filename)
+	err = c.SaveUploadedFile(fUpload, fDst)
 	if err != nil {
 		PrintlnError(err)
-		resp.AutoStep()
-		resp.WithErrorMessage(500, err.Error())
-		ginOut(c, resp)
 		return
 	}
 
-	fInfo, err := os.Stat(dst)
-	if err != nil {
-		PrintlnError(err)
-		resp.AutoStep()
-		resp.WithErrorMessage(500, err.Error())
-		ginOut(c, resp)
-		return
-	}
+	ett := NewEntity(fDst)
 
-	if fInfo.Size() > MAX_FILE_SIZE {
-		resp.AutoStep()
-		resp.WithErrorMessage(400, "file size is over limit.")
-		os.Remove(dst)
-		ginOut(c, resp)
-		return
-	}
+	fKey := strings.Join([]string{path_prefix, user_name, ett.MD5 + ett.Ext}, "/")
+	PrintlnDebug(fKey)
 
-	fMD5, err := MD5File(dst)
-	if err != nil {
-		resp.AutoStep()
-		resp.WithErrorMessage(500, err.Error())
-		ginOut(c, resp)
-		return
-	}
+	ett.WithString("User", user_name)
+	ett.WithString("Key", fKey)
 
-	fKey := filepath.Join(path_prefix, user_name, fMD5)
+	ett.SaveS3()
 
-	//
-	h, _ := HeadFile(bucketName, fKey)
-	log.Println(h)
-	log.Println(h.ContentType)
-
-	if Exists(bucketName, fKey) {
-		resp.AutoStep()
-		resp.WithErrorMessage(0, "SKIP save as exist")
-		ginOut(c, resp)
-
-		PrintlnDebug("SKIP save as exist")
-		return
-	} else {
-		// upload
-		fi, err := os.Open(dst)
-		if err != nil {
-			resp.WithErrorMessage(500, err.Error())
-			resp.AutoStep()
-			ginOut(c, resp)
-			return
-		}
-
-		s3uploader := manager.NewUploader(s3client)
-		fBytes, _ := io.ReadAll(fi)
-
-		_, err = s3uploader.Upload(context.TODO(), &s3.PutObjectInput{
-			Bucket:        aws.String(bucketName),
-			Key:           aws.String(fKey),
-			ContentType:   aws.String(fContentType),
-			ContentLength: aws.Int64(fSize),
-			CacheControl:  aws.String("max-age=86400"),
-			Body:          bytes.NewReader(fBytes),
-		})
-
-		if err != nil {
-			PrintlnError(err)
-		} else {
-			err = os.Remove(dst)
-			if err != nil {
-				resp.AutoStep()
-				resp.WithErrorMessage(500, err.Error())
-			}
-			resp.WithErrorMessage(0, "ok")
-			d := make(map[string]string, 3)
-			d["key"] = fKey
-			d["size"] = strconv.FormatInt(fSize, 10)
-			d["content-type"] = fContentType
-			resp.WithData(d)
-			PrintlnDebug("R2 UPLOADED:")
-		}
-	}
+	ett.SaveKVDB()
 
 	ginOut(c, resp)
 }
@@ -207,26 +133,3 @@ func HeadFile(b string, k string) (*s3.HeadObjectOutput, error) {
 }
 
 // ===============
-func PutFile(c *gin.Context) {
-
-	fFile, _ := c.FormFile(upload_file_form_name)
-	path_prefix := c.PostForm(upload_path_prefix)
-	user_name := c.PostForm(upload_user_name)
-
-	PrintlnDebug(user_name + ":" + path_prefix + ":" + fFile.Filename)
-
-	dst := filepath.Join(uploadTempDir, fFile.Filename)
-
-	err := c.SaveUploadedFile(fFile, dst)
-	if err != nil {
-		PrintlnError(err)
-		//return
-	}
-	//fSize := fFile.Size
-	//fContentType := "image/png"
-	ett := NewEntity(dst)
-
-	PrintlnDebug(ett.MD5)
-	PrintlnDebug(ett.LocalPath)
-	PrintlnDebug(ett.Size)
-}

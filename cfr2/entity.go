@@ -20,6 +20,7 @@ type Entity struct {
 	LocalPath   string
 	Key         string
 	MD5         string
+	Ext         string
 	Perm        string
 	Size        int64
 	ContentType string
@@ -46,14 +47,14 @@ func NewEntity(fpath string) *Entity {
 		return nil
 	}
 
-	fExt := filepath.Ext(absfpath)
-	PrintlnDebug(fExt)
-	if fExt == "" {
+	fext := filepath.Ext(absfpath)
+	PrintlnDebug(fext)
+	if fext == "" {
 		PrintlnDebug("cannot upload no-extension file")
 		return nil
 	}
 
-	contentType := mime.TypeByExtension(fExt)
+	contentType := mime.TypeByExtension(fext)
 	if contentType == "" {
 		PrintlnDebug("cannot parse mime type of the file")
 		return nil
@@ -74,9 +75,11 @@ func NewEntity(fpath string) *Entity {
 	fBytes, _ := io.ReadAll(fh)
 
 	ett := &Entity{}
+	ett.Bucket = bucketName
 	ett.LocalPath = absfpath
 	ett.Size = finfo.Size()
 	ett.MD5 = md5absfpath
+	ett.Ext = fext
 	ett.ContentType = contentType
 	ett.Data = bytes.NewReader(fBytes)
 	return ett
@@ -91,6 +94,8 @@ func (ett *Entity) WithString(k string, v string) *Entity {
 	case "localpath":
 		ett.LocalPath = v
 	case "key":
+		ett.Key = v
+	case "ext":
 		ett.Key = v
 	case "md5":
 		ett.MD5 = v
@@ -119,8 +124,12 @@ func (ett *Entity) WithInt(k string, v int) *Entity {
 	return ett
 }
 
-func (ett *Entity) SaveS3(k string, v int) *Entity {
+func (ett *Entity) SaveS3() *Entity {
 	if ett.Error != nil || ett.Data == nil {
+		return ett
+	}
+
+	if ett.User == "" || ett.Bucket == "" || ett.Key == "" || ett.ContentType == "" || ett.Size == 0 {
 		return ett
 	}
 
@@ -136,16 +145,21 @@ func (ett *Entity) SaveS3(k string, v int) *Entity {
 	})
 
 	if err != nil {
+		ett.Error = err
 		PrintlnError(err)
 	}
 
 	return ett
 }
 
-func (ett *Entity) SaveKVDB(k string, v int) *Entity {
+func (ett *Entity) SaveKVDB() *Entity {
 	if ett.Error != nil {
 		return ett
 	}
+	item := NewItem("test")
+	item.FileSize = ett.Size
+	item.Owner = ett.User
+	item.Save("images")
 	return ett
 }
 func (ett *Entity) SaveRDB(k string, v int) *Entity {

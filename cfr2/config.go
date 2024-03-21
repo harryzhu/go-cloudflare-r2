@@ -15,6 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
+
 	//"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
@@ -30,6 +34,11 @@ var (
 	TempDir       string = GetEnv("CFR2TEMPDIR", "temp")
 	LogsDir       string = GetEnv("CFR2LOGSDIR", "logs")
 	uploadTempDir string
+
+	mgConn        string = GetEnv("MONGOCONN", "")
+	MongoDatabase string = GetEnv("MONGODATABASE", "StableDiffusion")
+	mgdb          *mongo.Database
+	//mgcollection *mongo.Collection
 )
 
 const (
@@ -43,6 +52,7 @@ var (
 	anyError error = errors.New("[error]")
 
 	s3client *s3.Client
+	mgclient *mongo.Client
 )
 
 func init() {
@@ -65,6 +75,10 @@ func init() {
 	} else {
 		PrintlnDebug("found bucket")
 	}
+
+	mgclient = GetMongoClient()
+	mgdb = mgclient.Database(MongoDatabase)
+
 }
 
 func GetS3Client() *s3.Client {
@@ -86,6 +100,23 @@ func GetS3Client() *s3.Client {
 	c := s3.NewFromConfig(cfg)
 
 	return c
+}
+
+func GetMongoClient() *mongo.Client {
+	if mgConn == "" {
+		mgConn = "mongodb://localhost:27017"
+	}
+
+	m, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(mgConn))
+	if err != nil {
+		FatalError(err)
+	}
+	if err := m.Ping(context.TODO(), readpref.Primary()); err != nil {
+		FatalError(err)
+	} else {
+		PrintlnDebug("mongodb connected")
+	}
+	return m
 }
 
 func ginOut(c *gin.Context, j JsonResponse) {
