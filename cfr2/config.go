@@ -33,9 +33,9 @@ var (
 )
 
 const (
-	IsDebug         bool   = true
-	YYYYMMDD        string = "2006-01-02"
-	MAX_UPLOAD_SIZE int64  = 10 << 10
+	IsDebug       bool   = true
+	YYYYMMDD      string = "2006-01-02"
+	MAX_FILE_SIZE int64  = 10 << 20
 )
 
 var (
@@ -46,10 +46,14 @@ var (
 )
 
 func init() {
-	StartLogging()
-	//
 	uploadTempDir = filepath.Join(TempDir, "upload")
 	log.Println("uploadTempDir:", uploadTempDir)
+
+	MakeDirs(uploadTempDir)
+	MakeDirs(LogsDir)
+
+	//
+	StartLogging()
 
 	s3client = GetS3Client()
 
@@ -110,7 +114,8 @@ func StartServer() {
 	api := r.Group("/api/")
 
 	api.GET("/upload-file-form", getFormFileHTML)
-	api.POST("/upload", createFile)
+	//api.POST("/upload", createFile)
+	api.POST("/upload", PutFile)
 	api.DELETE("/delete/:bkt/:key", deleteFile)
 
 	r.Run(Listen)

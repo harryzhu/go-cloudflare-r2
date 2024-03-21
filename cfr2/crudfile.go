@@ -3,6 +3,7 @@ package cfr2
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strconv"
 
@@ -56,6 +57,23 @@ func createFile(c *gin.Context) {
 		return
 	}
 
+	fInfo, err := os.Stat(dst)
+	if err != nil {
+		PrintlnError(err)
+		resp.AutoStep()
+		resp.WithErrorMessage(500, err.Error())
+		ginOut(c, resp)
+		return
+	}
+
+	if fInfo.Size() > MAX_FILE_SIZE {
+		resp.AutoStep()
+		resp.WithErrorMessage(400, "file size is over limit.")
+		os.Remove(dst)
+		ginOut(c, resp)
+		return
+	}
+
 	fMD5, err := MD5File(dst)
 	if err != nil {
 		resp.AutoStep()
@@ -65,6 +83,11 @@ func createFile(c *gin.Context) {
 	}
 
 	fKey := filepath.Join(path_prefix, user_name, fMD5)
+
+	//
+	h, _ := HeadFile(bucketName, fKey)
+	log.Println(h)
+	log.Println(h.ContentType)
 
 	if Exists(bucketName, fKey) {
 		resp.AutoStep()
@@ -91,6 +114,7 @@ func createFile(c *gin.Context) {
 			Key:           aws.String(fKey),
 			ContentType:   aws.String(fContentType),
 			ContentLength: aws.Int64(fSize),
+			CacheControl:  aws.String("max-age=86400"),
 			Body:          bytes.NewReader(fBytes),
 		})
 
@@ -167,4 +191,42 @@ func Exists(b string, k string) bool {
 		return false
 	}
 	return true
+}
+
+func HeadFile(b string, k string) (*s3.HeadObjectOutput, error) {
+	h, err := s3client.HeadObject(context.TODO(), &s3.HeadObjectInput{
+		Bucket: aws.String(b),
+		Key:    aws.String(k),
+	})
+
+	if err != nil {
+		PrintlnError(err)
+		return &s3.HeadObjectOutput{}, err
+	}
+	return h, nil
+}
+
+// ===============
+func PutFile(c *gin.Context) {
+
+	fFile, _ := c.FormFile(upload_file_form_name)
+	path_prefix := c.PostForm(upload_path_prefix)
+	user_name := c.PostForm(upload_user_name)
+
+	PrintlnDebug(user_name + ":" + path_prefix + ":" + fFile.Filename)
+
+	dst := filepath.Join(uploadTempDir, fFile.Filename)
+
+	err := c.SaveUploadedFile(fFile, dst)
+	if err != nil {
+		PrintlnError(err)
+		//return
+	}
+	//fSize := fFile.Size
+	//fContentType := "image/png"
+	ett := NewEntity(dst)
+
+	PrintlnDebug(ett.MD5)
+	PrintlnDebug(ett.LocalPath)
+	PrintlnDebug(ett.Size)
 }

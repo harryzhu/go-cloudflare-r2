@@ -33,6 +33,14 @@ func GetEnv(s string, d string) string {
 	}
 }
 
+func MakeDirs(s string) {
+	_, err := os.Stat(s)
+	if err != nil {
+		err = os.MkdirAll(s, os.ModePerm)
+		FatalError(err)
+	}
+}
+
 func FatalError(err error) {
 	if err != nil {
 		log.Fatal(err)
@@ -45,7 +53,7 @@ func PrintlnError(err error) {
 	}
 }
 
-func PrintlnDebug(s string) {
+func PrintlnDebug(s ...any) {
 	if IsDebug {
 		log.Println(s)
 	}
