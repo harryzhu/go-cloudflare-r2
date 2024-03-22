@@ -66,10 +66,20 @@ func PutFile(c *gin.Context) {
 
 	ett.SaveKVDB("images")
 
-	item := NewItem(ett.Key)
-	item.GetFrom("images")
-
 	ginOut(c, resp)
+}
+
+func GetFile(c *gin.Context) {
+	k := ""
+	item := NewItem(k)
+	item.GetFrom("images")
+}
+
+func ListFileByUser(c *gin.Context) {
+	username := strings.TrimPrefix(c.Param("username"), "/")
+
+	item := &Item{}
+	item.GetFrom("images")
 }
 
 func DeleteFile(c *gin.Context) {

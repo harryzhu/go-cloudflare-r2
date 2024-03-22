@@ -142,9 +142,19 @@ func StartServer() {
 		c.JSON(http.StatusOK, smoke)
 	})
 
+	// ByUser
+	u := r.Group("/u/")
+	u.GET("/:username", ListFileByUser)
+
+	// S1
+	s1 := r.Group("/s1/")
+	s1.GET("/:bkt/*key", GetFile)
+
+	// API
 	api := r.Group("/api/")
 
 	api.GET("/upload-file-form", getFormFileHTML)
+
 	//api.POST("/upload", createFile)
 	api.POST("/upload", PutFile)
 	api.DELETE("/delete/:bkt/*key", DeleteFile)
