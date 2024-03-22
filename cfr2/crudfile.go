@@ -1,7 +1,7 @@
 package cfr2
 
 import (
-	"fmt"
+	// "fmt"
 	"path/filepath"
 	"strings"
 
@@ -28,6 +28,7 @@ var (
 	upload_file_form_name string = "upload-file-form"
 	upload_path_prefix    string = "upload-path-prefix"
 	upload_user_name      string = "upload-user-name"
+	upload_file_category  string = "upload-file-category"
 )
 
 func PutFile(c *gin.Context) {
@@ -40,8 +41,9 @@ func PutFile(c *gin.Context) {
 		return
 	}
 
-	path_prefix := c.PostForm(upload_path_prefix)
 	user_name := c.PostForm(upload_user_name)
+	file_category := c.PostForm(upload_file_category)
+	path_prefix := c.PostForm(upload_path_prefix)
 
 	fDst := filepath.Join(uploadTempDir, fUpload.Filename)
 	err = c.SaveUploadedFile(fUpload, fDst)
@@ -52,57 +54,52 @@ func PutFile(c *gin.Context) {
 
 	ett := NewEntity(fDst)
 
-	fKey := strings.Join([]string{path_prefix, user_name, ett.MD5 + ett.Ext}, "/")
+	fKey := strings.Join([]string{path_prefix, file_category, user_name, ett.MD5 + ett.Ext}, "/")
+	fKey = strings.ToLower(fKey)
 	PrintlnDebug(fKey)
 
 	ett.WithString("User", user_name)
 	ett.WithString("Key", fKey)
+	ett.WithString("Category", file_category)
 
 	ett.SaveS3()
 
-	ett.SaveKVDB()
+	ett.SaveKVDB("images")
+
+	item := NewItem(ett.Key)
+	item.GetFrom("images")
 
 	ginOut(c, resp)
 }
 
-func deleteFile(c *gin.Context) {
+func DeleteFile(c *gin.Context) {
 	resp := NewJsonResponse()
 	resp.WithFunction("deleteFile")
 
-	bkt := c.Param("bkt")
-	key := c.Param("key")
-
+	bkt := strings.TrimPrefix(c.Param("bkt"), "/")
+	key := strings.TrimPrefix(c.Param("key"), "/")
+	PrintlnDebug("bkt:", bkt)
+	PrintlnDebug("key:", key)
 	if bkt != "" && key != "" {
-		PrintlnDebug(fmt.Sprintf("%s/%s", bkt, key))
-		if Exists(bkt, key) {
-			PrintlnDebug("DELETE ...")
-			_, err := s3client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
-				Bucket: aws.String(bkt),
-				Key:    aws.String(key),
-			})
-			if err != nil {
-				resp.AutoStep()
-				resp.WithErrorMessage(500, err.Error())
-				PrintlnError(err)
-			} else {
-				resp.AutoStep()
-				resp.WithErrorMessage(0, "ok")
-				PrintlnDebug(fmt.Sprintf("DELETED: %s/%s", bkt, key))
-			}
-		} else {
-			resp.AutoStep()
-			resp.WithErrorMessage(404, fmt.Sprintf("key does not exist: %s/%s", bkt, key))
-			PrintlnDebug(fmt.Sprintf("Error: key does not exist: %s/%s", bkt, key))
-		}
-	} else {
-		resp.AutoStep()
-		resp.WithErrorMessage(500, "bucket or key cannot be empty")
+		ett := &Entity{}
+		ett.Error = nil
+		ett.Bucket = bkt
+		ett.User = "u0"
+		ett.Category = "model_22"
+		ett.Key = key
+
+		ett.DeleteFromS3()
 	}
 	ginOut(c, resp)
 }
 
 func getFormFileHTML(c *gin.Context) {
-	h := gin.H{"upload_file_form_name": upload_file_form_name}
+	h := gin.H{
+		"upload_file_form_name": upload_file_form_name,
+		"upload_path_prefix":    upload_path_prefix,
+		"upload_user_name":      upload_user_name,
+		"upload_file_category":  upload_file_category,
+	}
 	c.HTML(200, "upload-file-form.html", h)
 }
 

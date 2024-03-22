@@ -3,6 +3,7 @@ package cfr2
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"os"
@@ -17,6 +18,7 @@ import (
 type Entity struct {
 	User        string
 	Bucket      string
+	Category    string
 	LocalPath   string
 	Key         string
 	MD5         string
@@ -91,6 +93,8 @@ func (ett *Entity) WithString(k string, v string) *Entity {
 		ett.User = v
 	case "bucket":
 		ett.Bucket = v
+	case "category":
+		ett.Category = v
 	case "localpath":
 		ett.LocalPath = v
 	case "key":
@@ -129,7 +133,7 @@ func (ett *Entity) SaveS3() *Entity {
 		return ett
 	}
 
-	if ett.User == "" || ett.Bucket == "" || ett.Key == "" || ett.ContentType == "" || ett.Size == 0 {
+	if ett.User == "" || ett.Bucket == "" || ett.Category == "" || ett.Key == "" || ett.ContentType == "" || ett.Size == 0 {
 		return ett
 	}
 
@@ -152,16 +156,56 @@ func (ett *Entity) SaveS3() *Entity {
 	return ett
 }
 
-func (ett *Entity) SaveKVDB() *Entity {
+func (ett *Entity) DeleteFromS3() *Entity {
 	if ett.Error != nil {
 		return ett
 	}
-	item := NewItem("test")
-	item.FileSize = ett.Size
-	item.Owner = ett.User
-	item.Save("images")
+
+	if ett.Bucket == "" || ett.Key == "" {
+		ett.Error = errors.New("bucket/key cannot be empty")
+		return ett
+	}
+
+	result, err := s3client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+		Bucket: aws.String(ett.Bucket),
+		Key:    aws.String(ett.Key),
+	})
+
+	if err != nil {
+		ett.Error = err
+		PrintlnError(err)
+	} else {
+		PrintlnDebug(result)
+	}
+
 	return ett
 }
+
+func (ett *Entity) SaveKVDB(coll string) *Entity {
+	if ett.Error != nil || ett.Key == "" || coll == "" {
+		return ett
+	}
+	item := NewItem(ett.Key)
+	item.Size = ett.Size
+	item.Owner = ett.User
+
+	meta := make(map[string]string, 10)
+
+	item.Meta = meta
+	item.SaveTo(coll)
+	return ett
+}
+
+func (ett *Entity) DeleteFromKVDB(coll string) *Entity {
+	if ett.Error != nil || ett.Key == "" || coll == "" {
+		return ett
+	}
+	item := NewItem(ett.Key)
+
+	item.DeleteFrom(coll)
+	return ett
+}
+
 func (ett *Entity) SaveRDB(k string, v int) *Entity {
 	if ett.Error != nil {
 		return ett

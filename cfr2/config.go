@@ -147,7 +147,7 @@ func StartServer() {
 	api.GET("/upload-file-form", getFormFileHTML)
 	//api.POST("/upload", createFile)
 	api.POST("/upload", PutFile)
-	api.DELETE("/delete/:bkt/:key", deleteFile)
+	api.DELETE("/delete/:bkt/*key", DeleteFile)
 
 	r.Run(Listen)
 }
